@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Games Example</title>
+</head>
+<body>
+
+    <h3>WebSockets/Queues to Go!!</h3>
+    <form id='add_game_form'>
+        <input type='text' name='name' placeholder='Game name' required>
+        <input type='submit' value='Add' required>
+    </form>
+    <ul id="games_list"></ul>
+
+    <script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+
+    <script>
+
+        var token = 'myToken',
+            url = 'ws://gamewheel.local:8080/ws',
+            c = new WebSocket(url);
+
+        function render(data) {
+            if (!data) return;
+            $("#games_list").empty();
+            data.forEach(function(entry) {
+                $("#games_list").append(
+                        "<li data-id='" + entry.id+ "'>" +
+                        entry.id + " - " + entry.name + " - " + entry.created_at +
+                        "<span><button>Delete</button></span></li>"
+                );
+            });
+            $('#games_list button').off().click(function(evt) {
+                deleteGame({
+                    id: $($(evt.target).parents('li').get(0)).data('id')
+                });
+            });
+        }
+
+        function getAllGames() {
+            var payload = {
+                target: "db",
+                action: "index",
+                code: "game",
+                data: {},
+                token: token
+            };
+            c.send(JSON.stringify(payload));
+        }
+
+        function addGame(data) {
+            var payload = {
+                target: "db",
+                action: "post",
+                code: "game",
+                data: data,
+                token: token
+            };
+            c.send(JSON.stringify(payload));
+        }
+
+        function deleteGame(data) {
+            var payload = {
+                target: "db",
+                action: "delete",
+                code: "game",
+                data: data,
+                token: token
+            };
+            c.send(JSON.stringify(payload));
+        }
+
+        $(function() {
+
+            $('#add_game_form').submit(function(evt) {
+                evt = evt || window.event;
+                evt.preventDefault();
+                var name = $(evt.target).find("input[name=name]").val();
+                addGame({
+                    name: name
+                })
+            });
+
+            c.onopen = function() {
+                console.log("Websocket connection opened");
+                // Uncomment this interval for load testing the full websockets-rabbitmq flow
+//                setInterval(function() {
+                    getAllGames();
+//                }, 10);
+            };
+
+            c.onmessage = function(msg) {
+                if (!msg) return console.error('Empty message received!');
+                if (!msg.data) return console.error('Message received but without data!')
+                var data = null;
+                try {
+                    data = JSON.parse(msg.data);
+                } catch(e) {
+                    return console.error("Could not parse message data: ", msg.data)
+                }
+                console.log("Message received: ", msg, data)
+                if (data.data && data.data.games) {
+                    render(data.data.games);
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
