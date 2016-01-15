@@ -2,140 +2,98 @@ package server
 
 import (
     "fmt"
-    "log"
-    "encoding/json"
 
     "github.com/streadway/amqp"
+
     "github.com/ugarcia/go_test_common/models"
+    "github.com/ugarcia/go_test_common/mq"
 )
 
-// Global variables for DB queue/channel
-var dbQueue amqp.Queue
-var dbChannel *amqp.Channel
+// Global variables for queue/channel etc.
+var q *mq.AMQP
 
-/**
- * Helper function for handling errors
- */
-func failOnError(err error, msg string) {
-    if err != nil {
-        log.Fatalf("%s: %s", msg, err)
-        panic(fmt.Sprintf("%s: %s", msg, err))
-    }
-}
+// Constants for this module
+const MQ_URL = "amqp://guest:guest@mq.gamewheel.local:5672/"
+const QUEUE = "mcp_q"
+const ROUTE = "mcp.*"
+const ID = "mcp.*"
+const EXCHANGE = "mcp"
+var EXCHANGES = []string{"mcp", "modules"}
+
 
 /**
  * Initialize Queues, Channels and Consumer Loops
  */
 func InitAMQP() {
 
-    // Create connection for DB
-    dbConn, err := amqp.Dial("amqp://guest:guest@mq.gamewheel.local:5672/")
-    failOnError(err, "Failed to connect to RabbitMQ DB")
-    defer dbConn.Close()
+    // Create struct
+    q = new(mq.AMQP)
 
-    // Create DB Channel
-    dbChannel, err = dbConn.Channel()
-    failOnError(err, "Failed to open DB channel")
-    defer dbChannel.Close()
+    // Init it
+    q.Init(MQ_URL)
 
-    // Create DB Queue
-    dbQueue, err = dbChannel.QueueDeclare(
-        "db", // name
-        true,   // durable
-        false,   // delete when unused
-        false,   // exclusive
-        false,   // no-wait
-        nil,     // arguments
-    )
-    failOnError(err, "Failed to declare DB queue")
+    // Defer closing
+    defer q.Close()
 
-    // Create connection for WS
-    wsConn, err := amqp.Dial("amqp://guest:guest@mq.gamewheel.local:5672/")
-    failOnError(err, "Failed to connect to RabbitMQ WS")
-    defer wsConn.Close()
+    // Register exchanges
+    q.RegisterExchanges(EXCHANGES)
 
-    // Create WS Channel
-    wsChannel, err := wsConn.Channel()
-    failOnError(err, "Failed to open WS channel")
-    defer wsChannel.Close()
+    // Register queues
+    q.RegisterQueues([]string{QUEUE})
 
-    // Create WS Queue
-    wsQueue, err := wsChannel.QueueDeclare(
-        "ws", // name
-        true,   // durable
-        false,   // delete when unused
-        false,   // exclusive
-        false,   // no-wait
-        nil,     // arguments
-    )
-    failOnError(err, "Failed to declare WS queue")
+    // Bind queues
+    q.BindQueuesToExchange([]string{QUEUE}, EXCHANGE, ROUTE)
 
-    err = wsChannel.Qos(
-        1,     // prefetch count
-        0,     // prefetch size
-        false, // global
-    )
-    failOnError(err, "Failed to set QoS")
-
-    // Consume WS Channel messages
-    msgs, err := wsChannel.Consume(
-        wsQueue.Name, // queue
-        "", // consumer
-        false, // auto-ack
-        false, // exclusive
-        false, // no-local
-        false, // no-wait
-        nil, // args
-    )
-    failOnError(err, "Failed to register WS consumer")
-
-    // Loop forever for messages, and call handler for each
-    forever := make(chan bool)
-    go func() {
-        for d := range msgs {
-            log.Printf("Received a message: %s", d.Body)
-            d.Ack(false)
-            receiveWsQueueMessage(d)
-        }
-    }()
-    log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
-    <-forever
+    // Start consuming
+    q.Consume(QUEUE, receiveQueueMessage)
 }
 
 /**
- * Receives a message from WS Queue and calls WS handler
+ * Receives a message from MCP Queue and calls handler
  */
-func receiveWsQueueMessage(msg amqp.Delivery) {
-    // TODO: Check delivery parameters first?
-    data := models.WsQueueMessage{}
-    if err := json.Unmarshal([]byte(msg.Body), &data); err != nil {
-        fmt.Println(err.Error())
-        return
+func receiveQueueMessage(msg models.QueueMessage, d amqp.Delivery) {
+
+    // Lookup original sender from message
+    switch msg.Source {
+
+        // From websockets origin, send response back
+        case "mcp.ws":
+            outMsg := models.WsMessage{ BaseMessage: msg.BaseMessage }
+            HandleWsResponseMessage(outMsg)
+
+        // TODO: Handle malformed/other messages here
     }
-    HandleWsQueueMessage(data)
+
+    // TODO: Pass this delivery object along ans send ACK only after finishing everything???
+    d.Ack(false)
 }
 
 /**
- * Sends a message to DB Queue
+ * Handles a request from WS/HTTP
  */
-func SendDbQueueMessage(msg []byte) {
-    sendQueueMessage(msg, dbChannel, dbQueue.Name)
-}
+func HandleRequestMessage(inMsg models.BaseMessage) {
 
-/**
- * Sends a message to a Queue
- */
-func sendQueueMessage(msg []byte, ch *amqp.Channel, queue string) {
-    err := ch.Publish(
-        "",     // exchange
-        queue, // routing key
-        false,  // mandatory
-        false,  // immediate
-        amqp.Publishing{
-            DeliveryMode: amqp.Persistent,
-            ContentType: "application/json",
-            Body:        []byte(msg),
-        })
-    failOnError(err, "Failed to publish a message")
-    log.Printf(" [x] Sent %s", string(msg))
+    // Create Queue message from original
+    msg := models.QueueMessage {
+        BaseMessage: inMsg,
+        Sender: inMsg.Source,
+    }
+
+    // Lookup message type
+    switch(msg.Target) {
+
+        // Request for data, direct to basic module
+        case "data":
+            msg.Receiver = "modules.basic"
+
+        // TODO: Add more options here
+
+        // Unknown target
+        default:
+            fmt.Printf("Unknown message target: %s", msg.Target)
+            return
+    }
+
+    // Call sender handler
+    q.SendMessage(msg)
 }

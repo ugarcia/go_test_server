@@ -1,11 +1,11 @@
 package server
 
 import (
-    "fmt"
-    "encoding/json"
-    "golang.org/x/net/websocket"
+"fmt"
+"encoding/json"
+"golang.org/x/net/websocket"
 
-    "github.com/ugarcia/go_test_common/models"
+"github.com/ugarcia/go_test_common/models"
 )
 
 // Global connections collection variables
@@ -48,50 +48,67 @@ func wsHandler(ws *websocket.Conn) {
             break
         }
 
-        // Set sender and connection id into message
-        inMsg.Sender = "ws"
+        // TODO: Perform Token validation etc.
+
+        // Set source and connection data into message
+        // TODO: Possible to init this in model struct?
+        inMsg.Source = "mcp.ws"
+        inMsg.ConnectionType = "websocket"
         inMsg.ConnectionId = connectionId
 
-        // Check message target and deliver to proper handler
-        switch target := inMsg.Target; target {
-            case "db":
-                handleDbRequest(inMsg)
-            default:
-                fmt.Printf("Unknown target: %s\n", target)
-        }
+        // Call handler
+        go HandleRequestMessage(inMsg.BaseMessage)
     }
-}
-
-/**
- * Handles a request to DB service
- */
-func handleDbRequest(inMsg models.WsMessage) {
-
-    // Create DB Queue message from original
-    msg := models.DbQueueMessage {
-        BaseMessage:inMsg.BaseMessage,
-        Entity: inMsg.Code,
-    }
-
-    // Parse message to bytes
-    data, err := json.Marshal(msg)
-    if err != nil {
-        fmt.Println(err.Error())
-        return
-    }
-
-    // Call sender handler
-    SendDbQueueMessage(data)
 }
 
 /**
  * Handles a received message from WS Queue, sending relevant info to connected client
  */
-func HandleWsQueueMessage(msg models.WsQueueMessage) {
+func HandleWsResponseMessage(msg models.WsMessage) {
 
     // Reference to original connection vars if it applies
     var connId uint
     var conn *websocket.Conn
+
+    // TODO: Move these validations to some common place
+
+    // Try to get target
+    target := msg.Target
+    if target == "" {
+        fmt.Println("No target provided in queue message!");
+        return
+    }
+
+    // Try to get code
+    action := msg.Action
+    if action == "" {
+        fmt.Println("No action provided in queue message!");
+        return
+    }
+
+    // Try to get code
+    code := msg.Code
+    if code == "" {
+        fmt.Println("No code provided in queue message!");
+        return
+    }
+
+    // Try to get delivered data
+    inData := msg.Data
+    if inData == nil {
+        fmt.Println("No data provided in queue message!");
+        return
+    }
+
+    // Logic to determine if broadcast is necessary
+    msg.Broadcast = false
+    switch msg.Target {
+    case "data":
+        switch msg.Action {
+        case "post", "delete", "update":
+            msg.Broadcast = true
+        }
+    }
 
     // Check original connection if not broadcasting
     if !msg.Broadcast {
@@ -111,25 +128,8 @@ func HandleWsQueueMessage(msg models.WsQueueMessage) {
         }
     }
 
-    // Try to get code
-    code := msg.Code
-    if code == "" {
-        fmt.Println("No code provided in queue message!");
-        return
-    }
-
-    // Try to get delivered data
-    inData := msg.Data
-    if inData == nil {
-        fmt.Println("No data provided in queue message!");
-        return
-    }
-
     // Prepare message struct
-    outMsg := models.WsMessage {
-        BaseMessage: msg.BaseMessage,
-        Code: msg.Code,
-    }
+    outMsg := models.WsMessage { BaseMessage: msg.BaseMessage }
 
     // Wrap into bytes
     resp, err := json.Marshal(outMsg)
@@ -148,7 +148,7 @@ func HandleWsQueueMessage(msg models.WsQueueMessage) {
             websocket.Message.Send(v, response)
         }
 
-    // No broadcast, send to single connection
+        // No broadcast, send to single connection
     } else {
         websocket.Message.Send(conn, response)
     }

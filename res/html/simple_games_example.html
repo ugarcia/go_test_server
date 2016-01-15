@@ -77,7 +77,7 @@
 
         function getAllGames() {
             var payload = {
-                target: "db",
+                target: "data",
                 action: "index",
                 code: "game",
                 data: {},
@@ -88,7 +88,7 @@
 
         function addGame(data) {
             var payload = {
-                target: "db",
+                target: "data",
                 action: "post",
                 code: "game",
                 data: data,
@@ -99,7 +99,7 @@
 
         function deleteGame(data) {
             var payload = {
-                target: "db",
+                target: "data",
                 action: "delete",
                 code: "game",
                 data: data,

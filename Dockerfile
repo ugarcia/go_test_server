@@ -34,9 +34,7 @@ ENV GO_TEST_SERVER_PATH=/go/src/github.com/ugarcia/go_test_server
 
 RUN mkdir -p $GO_TEST_SERVER_PATH
 WORKDIR $GO_TEST_SERVER_PATH
-COPY . ./
-RUN cd $GO_TEST_SERVER_PATH
-RUN go get
 
 EXPOSE 8080
+CMD ["go", "get"]
 CMD ["go", "run", "main.go"]
