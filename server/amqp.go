@@ -29,7 +29,7 @@ func failOnError(err error, msg string) {
 func InitAMQP() {
 
     // Create connection for DB
-    dbConn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+    dbConn, err := amqp.Dial("amqp://guest:guest@mq.gamewheel.local:5672/")
     failOnError(err, "Failed to connect to RabbitMQ DB")
     defer dbConn.Close()
 
@@ -50,7 +50,7 @@ func InitAMQP() {
     failOnError(err, "Failed to declare DB queue")
 
     // Create connection for WS
-    wsConn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+    wsConn, err := amqp.Dial("amqp://guest:guest@mq.gamewheel.local:5672/")
     failOnError(err, "Failed to connect to RabbitMQ WS")
     defer wsConn.Close()
 

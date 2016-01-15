@@ -18,8 +18,45 @@
     <script>
 
         var token = 'myToken',
-            url = 'ws://gamewheel.local:8080/ws',
+            url = 'ws://dev-server.gamewheel.local/ws',
+            c;
+
+        function initSocket() {
             c = new WebSocket(url);
+
+            c.onopen = function() {
+                console.log("Websocket connection opened");
+                // Uncomment this interval for load testing the full websockets-rabbitmq flow
+//                setInterval(function() {
+                getAllGames();
+//                }, 10);
+            };
+
+            c.onmessage = function(msg) {
+                if (!msg) return console.error('Empty message received!');
+                if (!msg.data) return console.error('Message received but without data!')
+                var data = null;
+                try {
+                    data = JSON.parse(msg.data);
+                } catch(e) {
+                    return console.error("Could not parse message data: ", msg.data)
+                }
+                console.log("Message received: ", msg, data)
+                if (data.data && data.data.games) {
+                    render(data.data.games);
+                }
+            };
+
+            c.onclose = function() {
+                console.error("Websocket connection closed!");
+                initSocket();
+            };
+
+            c.onerror = function(evt) {
+                console.error("Error in Websocket connection", evt);
+                initSocket();
+            };
+        }
 
         function render(data) {
             if (!data) return;
@@ -82,28 +119,7 @@
                 })
             });
 
-            c.onopen = function() {
-                console.log("Websocket connection opened");
-                // Uncomment this interval for load testing the full websockets-rabbitmq flow
-//                setInterval(function() {
-                    getAllGames();
-//                }, 10);
-            };
-
-            c.onmessage = function(msg) {
-                if (!msg) return console.error('Empty message received!');
-                if (!msg.data) return console.error('Message received but without data!')
-                var data = null;
-                try {
-                    data = JSON.parse(msg.data);
-                } catch(e) {
-                    return console.error("Could not parse message data: ", msg.data)
-                }
-                console.log("Message received: ", msg, data)
-                if (data.data && data.data.games) {
-                    render(data.data.games);
-                }
-            }
+            initSocket();
         });
 
     </script>
