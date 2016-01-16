@@ -36,5 +36,4 @@ RUN mkdir -p $GO_TEST_SERVER_PATH
 WORKDIR $GO_TEST_SERVER_PATH
 
 EXPOSE 8080
-CMD ["go", "get"]
-CMD ["go", "run", "main.go"]
+CMD ["sh", "-c", "go get; go run main.go"]
